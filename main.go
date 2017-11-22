@@ -120,7 +120,7 @@ var filesCmd = &cobra.Command{
 	Long:  "タグにファイルを登録する。\n登録先のタグが create されている必要があります。",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) <= 1 {
-			cmd.SetUsageTemplate("tager tag add files [tag name] [file name]...")
+			cmd.SetUsageTemplate("tager tag add files [tag] [file]...")
 			cmd.Help()
 			return
 		}
@@ -130,15 +130,56 @@ var filesCmd = &cobra.Command{
 			return
 		}
 		for _, v := range args[1:] {
-			files, err := filepath.Glob(v)
-			fmt.Println(files, err)
-			cur.Child(v).Set(nil)
-			save()
+			_, err := os.Stat(v)
+			if err != nil {
+				fmt.Println(v, "そのようなファイルは存在しません。")
+				continue
+			}
+			full, err := filepath.Abs(v)
+			if err != nil {
+				fmt.Println(v, "ファイル名の指定が正しくありません。")
+				continue
+			}
+			cur.Child(full).Set(v)
+			err = save()
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
 		}
 	},
 }
 
 // ==================== file ====================
+var fileCmd = &cobra.Command{
+        Use:   "file",
+        Short: "ファイル関連のコマンド",
+        Long:  "ファイルを管理するためのサブコマンド",
+        Run: func(cmd *cobra.Command, args []string) {
+		cmd.Help()
+	},
+}
+
+var flsCmd = &cobra.Command{
+        Use:   "ls",
+        Short: "ファイルを一覧する",
+        Long:  "ファイルを一覧する",
+        Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			cmd.SetUsageTemplate("tager file ls [tag]...")
+			cmd.Help()
+			return
+		}
+		cur := moveTag(args).Child("files")
+		if !cur.Exists() {
+                        fmt.Println("そのようなタグは存在しません")
+                        return
+                }
+                if cur.IsMap() {
+                        fmt.Println(strings.Join(cur.Keys(), "\n"))
+                }
+        },
+}
 
 // ==================== func ====================
 func moveTag(tags []string) *nestmap.Nestmap {
@@ -154,36 +195,45 @@ func moveTag(tags []string) *nestmap.Nestmap {
 	}
 	return cur.Parent()
 }
+
+func initFile(){
+	os.Create(configFile)
+	config.Child("root", "tags").MakeMap()
+	save()
+}
+
 func save() error {
 	b, err := config.BytesIndent()
 	if err != nil {
 		return err
 	}
-	ioutil.WriteFile(configFile, b, 0766)
-	return nil
+	return ioutil.WriteFile(configFile, b, 0766)
 }
 
 func init() {
+	config = nestmap.New()
+	config.Indent = "\t"
+
 	cobra.OnInitialize()
-	RootCmd.AddCommand(versionCmd, tagCmd)
+	RootCmd.AddCommand(versionCmd, tagCmd, fileCmd)
 	tagCmd.AddCommand(lsCmd, createCmd, addCmd)
 	addCmd.AddCommand(tagsCmd, filesCmd)
+	fileCmd.AddCommand(flsCmd)
 }
 
 func main() {
 	// 設定ファイルの読み込み
 	dir := os.Getenv("HOME") + "/.tager"
-	configFile := dir + "/tag.json"
-	if err := os.Chdir(dir); err != nil {
+	configFile = dir + "/tag.json"
+	if _, err := os.Stat(dir); err != nil {
 		os.Mkdir(dir, 0777)
-		os.Chdir(dir)
-		os.Create(configFile)
+		initFile()
 	}
 
 	confb, err := ioutil.ReadFile(configFile)
 	if err != nil {
-		os.Create(configFile)
-		confb = []byte{}
+		initFile()
+		confb, _ = ioutil.ReadFile(configFile)
 	}
 
 	m := new(interface{})
@@ -193,8 +243,6 @@ func main() {
 		log.Fatalf("error: %v", err)
 	}
 
-	config = nestmap.New()
-	config.Indent = "\t"
 	config.Set(*m)
 
 	// コマンド実行

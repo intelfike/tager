@@ -1,3 +1,31 @@
+/*
+# タグ型ファイル管理システム(ラッパー)
+## 気をつけること
+- ドキュメントを内包しているかのような使いやすさ(サブコマンドの利用)
+- タイプミスなどを防ぐフールプルーフ設計(タグを定義すること)
+- 環境設定などが必要ない設計(シングルバイナリでの提供、設定ファイルはHOMEディレクトリに設置など)
+
+
+## 目的1
+以下のように、バッククォートで挟んで列挙することで、まとめてファイルを操作することを目的とする。
+これは個人的に便利なだけ。
+
+chmod 777 `tager files golang`
+rm -f `tager file ls golang`
+
+## 目的2
+GUIからコマンドを呼び出すことも視野に入れている。
+electronやWebアプリなど
+
+## 目的3
+サブコマンドの方式の開発に慣れる(Dockerやgitなどに倣う)
+
+
+## その他詳細
+- タグ名もファイルパスも一意なため、key-value型のデータ管理を利用する。(jsonの利用)
+高速さ、処理の簡単さが魅力的。
+-
+*/
 package main
 
 import (
@@ -109,15 +137,15 @@ var tagsCmd = &cobra.Command{
 	Long:  "タグにタグを登録する。\n登録先のタグ、登録するタグの両方が create されている必要があります。",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) <= 1 {
-                        cmd.SetUsageTemplate("tager tag add tags [tag] [tags]...")
-                        cmd.Help()
-                        return
-                }
+			cmd.SetUsageTemplate("tager tag add tags [tag] [tags]...")
+			cmd.Help()
+			return
+		}
 		cur := moveTag(args[0:1]).Child("tags")
 		if !cur.Exists() {
-                        fmt.Println(args[0], "そのようなタグは存在しません")
-                        return
-                }
+			fmt.Println(args[0], "そのようなタグは存在しません")
+			return
+		}
 		for _, v := range args[1:] {
 			if !config.Child("root", "tags").HasChild(v) {
 				fmt.Println(v, "そのようなタグは存在しません")
@@ -167,19 +195,20 @@ var filesCmd = &cobra.Command{
 
 // ==================== file ====================
 var fileCmd = &cobra.Command{
-        Use:   "file",
-        Short: "ファイル関連のコマンド",
-        Long:  "ファイルを管理するためのサブコマンド",
-        Run: func(cmd *cobra.Command, args []string) {
+	Use:   "file",
+	Short: "ファイル関連のコマンド",
+	Long:  "ファイルを管理するためのサブコマンド",
+	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
 }
 
 var flsCmd = &cobra.Command{
-        Use:   "ls",
-        Short: "ファイルを一覧する",
-        Long:  "ファイルを一覧する",
-        Run: func(cmd *cobra.Command, args []string) {
+	Use:     "ls",
+	Aliases: []string{"files"},
+	Short:   "ファイルを一覧する",
+	Long:    "ファイルを一覧する",
+	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
 			cmd.SetUsageTemplate("tager file ls [tag]...")
 			cmd.Help()
@@ -187,13 +216,13 @@ var flsCmd = &cobra.Command{
 		}
 		cur := moveTag(args).Child("files")
 		if !cur.Exists() {
-                        fmt.Println("そのようなタグは存在しません")
-                        return
-                }
-                if cur.IsMap() {
-                        fmt.Println(strings.Join(cur.Keys(), "\n"))
-                }
-        },
+			fmt.Println("そのようなタグは存在しません")
+			return
+		}
+		if cur.IsMap() {
+			fmt.Println(strings.Join(cur.Keys(), "\n"))
+		}
+	},
 }
 
 // ==================== func ====================
@@ -213,12 +242,12 @@ func moveTag(tags []string) *nestmap.Nestmap {
 
 func getInitedTag() *nestmap.Nestmap {
 	tagini := nestmap.New()
-        tagini.Child("tags").MakeMap()
-        tagini.Child("files").MakeMap()
+	tagini.Child("tags").MakeMap()
+	tagini.Child("files").MakeMap()
 	return tagini
 }
 
-func initFile(){
+func initFile() {
 	os.Create(configFile)
 	config.Child("root", "tags").MakeMap()
 	save()
@@ -241,6 +270,9 @@ func init() {
 	tagCmd.AddCommand(lsCmd, createCmd, addCmd)
 	addCmd.AddCommand(tagsCmd, filesCmd)
 	fileCmd.AddCommand(flsCmd)
+	lsCmd.Use = "tags"
+	flsCmd.Use = "files"
+	RootCmd.AddCommand(lsCmd, flsCmd)
 }
 
 func main() {

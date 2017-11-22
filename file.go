@@ -17,17 +17,16 @@ var fileCmd = &cobra.Command{
 }
 
 var filelsCmd = &cobra.Command{
-	Use:     "ls",
-	Aliases: []string{"files"},
-	Short:   "ファイルを一覧する",
-	Long:    "ファイルを一覧する",
+	Use:   "ls",
+	Short: "ファイルを一覧する",
+	Long:  "ファイルを一覧する",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
-			cmd.SetUsageTemplate("tager file ls [tag]...")
+			cmd.SetUsageTemplate("tager file ls [tags]...")
 			cmd.Help()
 			return
 		}
-		cur := moveTag(args).Child("files")
+		cur := config.Child("root", "tags", args[0], "files")
 		if !cur.Exists() {
 			fmt.Println("そのようなタグは存在しません")
 			return
@@ -35,5 +34,16 @@ var filelsCmd = &cobra.Command{
 		if cur.IsMap() {
 			fmt.Println(strings.Join(cur.Keys(), "\n"))
 		}
+	},
+}
+
+// ==================== add ====================
+
+var fileAddCmd = &cobra.Command{
+	Use:   "add",
+	Short: "ファイルにタグを付与する",
+	Long:  "ファイルにタグを付与する\nタグが存在しない場合は登録できません",
+	Run: func(cmd *cobra.Command, args []string) {
+
 	},
 }

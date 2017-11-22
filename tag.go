@@ -23,7 +23,7 @@ var taglsCmd = &cobra.Command{
 	Short: "タグを一覧する",
 	Long:  "タグを一覧する",
 	Run: func(cmd *cobra.Command, args []string) {
-		cur := moveTag(args).Child("tags")
+		cur := config.Child("root", "tags", args[0], "tags")
 		if !cur.Exists() {
 			fmt.Println("そのようなタグは存在しません")
 			return
@@ -94,7 +94,7 @@ var addCmd = &cobra.Command{
 	},
 }
 
-// addするときにリンクだけ貼る？
+// 循環参照のチェックをだね
 var addTagsCmd = &cobra.Command{
 	Use:   "tags",
 	Short: "タグにタグを登録する",
@@ -105,7 +105,7 @@ var addTagsCmd = &cobra.Command{
 			cmd.Help()
 			return
 		}
-		cur := moveTag(args[0:1]).Child("tags")
+		cur := config.Child("root", "tags", args[0])
 		if !cur.Exists() {
 			fmt.Println(args[0], "そのようなタグは存在しません")
 			return
@@ -117,10 +117,22 @@ var addTagsCmd = &cobra.Command{
 			}
 			if args[0] == v {
 				fmt.Println(v, "登録元と登録先のタグが同じです")
-				return
+				continue
 			}
-			cur.Child(v).Set(v)
+			if cur.Child("tags").HasChild(v) {
+				fmt.Println(v, "はすでに登録されています")
+				continue
+			}
+			cur.Child("tags", v).Set(v)
 		}
+		// 循環参照をチェックする
+		recNestTag(cur, func(s string) {
+			unique := args[0] != s
+			if !unique {
+				fmt.Println(s, ":循環参照です\n登録に失敗しました")
+				os.Exit(1)
+			}
+		})
 		if err := save(); err != nil {
 			fmt.Println(err)
 			return
@@ -138,7 +150,7 @@ var addFilesCmd = &cobra.Command{
 			cmd.Help()
 			return
 		}
-		cur := moveTag(args[0:1]).Child("files")
+		cur := config.Child("root", "tags", args[0], "files")
 		if !cur.Exists() {
 			fmt.Println(args[0], "そのようなタグは存在しません")
 			return
@@ -185,7 +197,7 @@ var removeTagsCmd = &cobra.Command{
 			cmd.Help()
 			return
 		}
-		cur := moveTag(args[0:1]).Child("tags")
+		cur := config.Child("root", "tags", args[0], "tags")
 		if !cur.Exists() {
 			fmt.Println(args[0], "そのようなタグは存在しません")
 			return
@@ -216,7 +228,7 @@ var removeFilesCmd = &cobra.Command{
 			cmd.Help()
 			return
 		}
-		cur := moveTag(args[0:1]).Child("files")
+		cur := config.Child("root", "tags", args[0], "files")
 		if !cur.Exists() {
 			fmt.Println(args[0], "そのようなタグは存在しません")
 			return
@@ -254,7 +266,7 @@ var autoremoveCmd = &cobra.Command{
 }
 var autoremoveAllCmd = &cobra.Command{
 	Use:   "all",
-	Short: "タグから存在しないタグとファイルを自動削除する\nタグ名が未指定の場合はすべてのタグが対象です",
+	Short: "タグから存在しないタグとファイルを自動削除する",
 	Long:  "タグから存在しないタグとファイルを自動削除する\nタグ名が未指定の場合はすべてのタグが対象です",
 	Run: func(cmd *cobra.Command, args []string) {
 		autoremoveTagsCmd.Run(cmd, args)
@@ -298,12 +310,12 @@ var autoremoveFilesCmd = &cobra.Command{
 			args = rootTags.Keys()
 		}
 		for _, v := range args {
-			tags := rootTags.Child(v, "tags")
-			for _, file := range tags.Keys() {
-				if _, err := os.Stat(file); err != nil {
+			files := rootTags.Child(v, "files")
+			for _, file := range files.Keys() {
+				if _, err := os.Stat(file); err == nil {
 					continue
 				}
-				tags.Child(file).Remove()
+				files.Child(file).Remove()
 			}
 		}
 		if err := save(); err != nil {

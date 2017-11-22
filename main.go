@@ -49,6 +49,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -84,7 +85,7 @@ var versionCmd = &cobra.Command{
 }
 
 // ==================== func ====================
-func moveTag(tags []string) *nestmap.Nestmap {
+func nestTag(tags ...string) (*nestmap.Nestmap, error) {
 	tags = strings.Split(strings.Join(tags, "/"), "/")
 
 	root := config.Child("root", "tags")
@@ -93,9 +94,19 @@ func moveTag(tags []string) *nestmap.Nestmap {
 		if v == "" {
 			continue
 		}
-		cur = cur.Child(v, "tags")
+		if !cur.HasChild(v) {
+			return nil, errors.New("tag not exists")
+		}
+		cur = root.Child(v, "tags")
 	}
-	return cur.Parent()
+	return cur.Parent(), nil
+}
+func recNestTag(nm *nestmap.Nestmap, cb func(string)) {
+	root := config.Child("root", "tags")
+	for _, v := range nm.Child("tags").Keys() {
+		cb(v)
+		recNestTag(root.Child(v), cb)
+	}
 }
 
 func getInitedTag() *nestmap.Nestmap {

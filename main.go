@@ -24,7 +24,26 @@ electronやWebアプリなど
 ## その他詳細
 - タグ名もファイルパスも一意なため、key-value型のデータ管理を利用する。(jsonの利用)
 高速さ、処理の簡単さが魅力的。
--
+
+## 作成予定のサブコマンド
+tager
+	version
+	tag
+		ls
+		add
+			tags
+			files
+		remove
+			tags
+			files
+
+	tags [tags]...
+	file
+		ls
+		add tags
+		remove tags
+	files [tags]...
+---
 */
 package main
 
@@ -34,13 +53,13 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/intelfike/nestmap"
 	"github.com/spf13/cobra"
 )
 
+// ==================== 定義 ====================
 var (
 	config     *nestmap.Nestmap
 	configFile string
@@ -55,173 +74,12 @@ var RootCmd = &cobra.Command{
 	},
 }
 
-// ==================== other ====================
-
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "バージョン番号を表示する",
 	Long:  "バージョン番号を表示する",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("tager v1.0")
-	},
-}
-
-// ==================== tag ====================
-
-var tagCmd = &cobra.Command{
-	Use:   "tag",
-	Short: "タグ関連のコマンド",
-	Long:  "タグを管理するためのサブコマンド",
-	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
-	},
-}
-
-var lsCmd = &cobra.Command{
-	Use:   "ls",
-	Short: "タグを一覧する",
-	Long:  "タグを一覧する",
-	Run: func(cmd *cobra.Command, args []string) {
-		cur := moveTag(args).Child("tags")
-		if !cur.Exists() {
-			fmt.Println("そのようなタグは存在しません")
-			return
-		}
-		if cur.IsMap() {
-			fmt.Println(strings.Join(cur.Keys(), "\n"))
-		}
-		// else if cur.IsArray() {
-		// 	for _, v := range cur.ToArray() {
-		// 		fmt.Println(v.ToString())
-		// 	}
-		// }
-	},
-}
-
-var createCmd = &cobra.Command{
-	Use:   "create",
-	Short: "新しいタグを作成する",
-	Long:  "新しいタグを作成する",
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			cmd.Help()
-		}
-		root := config.Child("root", "tags")
-		for _, v := range args {
-			if root.HasChild(v) {
-				fmt.Println(v, "は既に存在しています。")
-			}
-			// タグの初期化
-			tagini := getInitedTag()
-			root.Child(v).Set(tagini.Interface())
-			if err := save(); err != nil {
-				fmt.Println("何故かセーブできませんでした")
-				return
-			}
-		}
-	},
-}
-
-var addCmd = &cobra.Command{
-	Use:   "add",
-	Short: "タグにデータを登録する",
-	Long:  "タグにデータを登録する",
-	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
-	},
-}
-
-var tagsCmd = &cobra.Command{
-	Use:   "tags",
-	Short: "タグにタグを登録する",
-	Long:  "タグにタグを登録する。\n登録先のタグ、登録するタグの両方が create されている必要があります。",
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) <= 1 {
-			cmd.SetUsageTemplate("tager tag add tags [tag] [tags]...")
-			cmd.Help()
-			return
-		}
-		cur := moveTag(args[0:1]).Child("tags")
-		if !cur.Exists() {
-			fmt.Println(args[0], "そのようなタグは存在しません")
-			return
-		}
-		for _, v := range args[1:] {
-			if !config.Child("root", "tags").HasChild(v) {
-				fmt.Println(v, "そのようなタグは存在しません")
-				continue
-			}
-			initag := getInitedTag()
-			cur.Child(v).Set(initag.Interface())
-		}
-	},
-}
-
-var filesCmd = &cobra.Command{
-	Use:   "files",
-	Short: "タグにファイルを登録する",
-	Long:  "タグにファイルを登録する。\n登録先のタグが create されている必要があります。",
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) <= 1 {
-			cmd.SetUsageTemplate("tager tag add files [tag] [file]...")
-			cmd.Help()
-			return
-		}
-		cur := moveTag(args[0:1]).Child("files")
-		if !cur.Exists() {
-			fmt.Println(args[0], "そのようなタグは存在しません。")
-			return
-		}
-		for _, v := range args[1:] {
-			_, err := os.Stat(v)
-			if err != nil {
-				fmt.Println(v, "そのようなファイルは存在しません。")
-				continue
-			}
-			full, err := filepath.Abs(v)
-			if err != nil {
-				fmt.Println(v, "ファイル名の指定が正しくありません。")
-				continue
-			}
-			cur.Child(full).Set(v)
-			err = save()
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-		}
-	},
-}
-
-// ==================== file ====================
-var fileCmd = &cobra.Command{
-	Use:   "file",
-	Short: "ファイル関連のコマンド",
-	Long:  "ファイルを管理するためのサブコマンド",
-	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
-	},
-}
-
-var flsCmd = &cobra.Command{
-	Use:     "ls",
-	Aliases: []string{"files"},
-	Short:   "ファイルを一覧する",
-	Long:    "ファイルを一覧する",
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			cmd.SetUsageTemplate("tager file ls [tag]...")
-			cmd.Help()
-			return
-		}
-		cur := moveTag(args).Child("files")
-		if !cur.Exists() {
-			fmt.Println("そのようなタグは存在しません")
-			return
-		}
-		if cur.IsMap() {
-			fmt.Println(strings.Join(cur.Keys(), "\n"))
-		}
 	},
 }
 
@@ -267,12 +125,14 @@ func init() {
 
 	cobra.OnInitialize()
 	RootCmd.AddCommand(versionCmd, tagCmd, fileCmd)
-	tagCmd.AddCommand(lsCmd, createCmd, addCmd)
-	addCmd.AddCommand(tagsCmd, filesCmd)
-	fileCmd.AddCommand(flsCmd)
-	lsCmd.Use = "tags"
-	flsCmd.Use = "files"
-	RootCmd.AddCommand(lsCmd, flsCmd)
+	tagCmd.AddCommand(taglsCmd, createCmd, deleteCmd, addCmd, removeCmd, autoremoveCmd)
+	addCmd.AddCommand(addTagsCmd, addFilesCmd)
+	removeCmd.AddCommand(removeTagsCmd, removeFilesCmd)
+	autoremoveCmd.AddCommand(autoremoveAllCmd, autoremoveTagsCmd, autoremoveFilesCmd)
+	fileCmd.AddCommand(filelsCmd)
+	// taglsCmd.Use = "tags"
+	// filelsCmd.Use = "files"
+	// RootCmd.AddCommand(taglsCmd, filelsCmd)
 }
 
 func main() {

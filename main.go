@@ -84,9 +84,7 @@ var createCmd = &cobra.Command{
 				fmt.Println(v, "は既に存在しています。")
 			}
 			// タグの初期化
-			tagini := nestmap.New()
-			tagini.Child("tags").MakeMap()
-			tagini.Child("files").MakeMap()
+			tagini := getInitedTag()
 			root.Child(v).Set(tagini.Interface())
 			if err := save(); err != nil {
 				fmt.Println("何故かセーブできませんでした")
@@ -110,7 +108,24 @@ var tagsCmd = &cobra.Command{
 	Short: "タグにタグを登録する",
 	Long:  "タグにタグを登録する。\n登録先のタグ、登録するタグの両方が create されている必要があります。",
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
+		if len(args) <= 1 {
+                        cmd.SetUsageTemplate("tager tag add tags [tag] [tags]...")
+                        cmd.Help()
+                        return
+                }
+		cur := moveTag(args[0:1]).Child("tags")
+		if !cur.Exists() {
+                        fmt.Println(args[0], "そのようなタグは存在しません")
+                        return
+                }
+		for _, v := range args[1:] {
+			if !config.Child("root", "tags").HasChild(v) {
+				fmt.Println(v, "そのようなタグは存在しません")
+				continue
+			}
+			initag := getInitedTag()
+			cur.Child(v).Set(initag.Interface())
+		}
 	},
 }
 
@@ -194,6 +209,13 @@ func moveTag(tags []string) *nestmap.Nestmap {
 		cur = cur.Child(v, "tags")
 	}
 	return cur.Parent()
+}
+
+func getInitedTag() *nestmap.Nestmap {
+	tagini := nestmap.New()
+        tagini.Child("tags").MakeMap()
+        tagini.Child("files").MakeMap()
+	return tagini
 }
 
 func initFile(){

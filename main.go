@@ -5,6 +5,10 @@
 - タイプミスなどを防ぐフールプルーフ設計(タグを定義すること)
 - 環境設定などが必要ない設計(シングルバイナリでの提供、設定ファイルはHOMEディレクトリに設置など)
 
+## 対象
+複数人かつ大規模なプロジェクトに参加している人
+ディレクトリ管理を柔軟にしたい人
+
 
 ## 目的1
 以下のように、バッククォートで挟んで列挙することで、まとめてファイルを操作することを目的とする。
@@ -24,25 +28,20 @@ electronやWebアプリなど
 ## その他詳細
 - タグ名もファイルパスも一意なため、key-value型のデータ管理を利用する。(jsonの利用)
 高速さ、処理の簡単さが魅力的。
+- タグからシンボリックリンク集を自動生成(mount機能)
+- tag1 AND tag2 / tag1 OR tag2 のような計算機能(-cオプションで実装)
+- タグからタグへコピーする機能
+- 複数のタグを統合する機能
+-
+- autoremoveの削除メッセージ
 
 ## 作成予定のサブコマンド
 tager
 	version
-	tag
-		ls
-		add
-			tags
-			files
-		remove
-			tags
-			files
-
-	tags [tags]...
-	file
-		ls
-		add tags
-		remove tags
-	files [tags]...
+	mount [-r] [tag]
+	copy [tag] [tag]
+	show
+		-c コメントの表示
 ---
 */
 package main
@@ -64,6 +63,9 @@ import (
 var (
 	config     *nestmap.Nestmap
 	configFile string
+	rootTags   *nestmap.Nestmap
+	showFlagR  *bool
+	mountFlagR *bool
 )
 
 var RootCmd = &cobra.Command{
@@ -84,12 +86,107 @@ var versionCmd = &cobra.Command{
 	},
 }
 
+var mountCmd = &cobra.Command{
+	Use:   "mount",
+	Short: "シンボリックリンク集を作成する",
+	Long:  "シンボリックリンク集を作成する\nカレントディレクトリに、指定されたタグ名と同じディレクトリ名で作成されます",
+	Run: func(cmd *cobra.Command, args []string) {
+		cmd.ParseFlags(args)
+		if len(args) != 1 {
+			addUsage(cmd, " TAG")
+			cmd.Help()
+			return
+		}
+		dir := args[0]
+		os.Mkdir(dir, 0777)
+		cur := rootTags.Child(dir)
+		if cur.HasChild("files") {
+			for _, v := range cur.Child("files").Keys() {
+				newname := strings.Replace(v, "/", "-", -1)
+				if err := os.Symlink(v, dir+"/"+newname); err != nil {
+					fmt.Println(err)
+					continue
+				}
+			}
+		}
+		if *mountFlagR {
+			recNestTag(cur, "", func(nm *nestmap.Nestmap, path string) {
+				path = strings.TrimPrefix(path, "/")
+				os.Mkdir(path, 0777)
+				fmt.Println(nm, path)
+				if !nm.HasChild("files") {
+					return
+				}
+				for _, v := range nm.Child("files").Keys() {
+					newname := strings.Replace(v, "/", "-", -1)
+					if err := os.Symlink(v, args[0]+path+"/"+newname); err != nil {
+						fmt.Println(err)
+						continue
+					}
+				}
+			})
+		}
+	},
+}
+
+var showCmd = &cobra.Command{
+	Use:   "show",
+	Short: "データを一覧する",
+	Long:  "データを一覧する",
+	Run: func(cmd *cobra.Command, args []string) {
+		cmd.Help()
+	},
+}
+
+var addCmd = &cobra.Command{
+	Use:   "add",
+	Short: "タグにデータを登録する",
+	Long:  "タグにデータを登録する",
+	Run: func(cmd *cobra.Command, args []string) {
+		cmd.Help()
+	},
+}
+
+var removeCmd = &cobra.Command{
+	Use:   "remove",
+	Short: "タグからデータの登録を解除する",
+	Long:  "タグからデータの登録を解除する\n削除するデータが存在していない場合は無視されます",
+	Run: func(cmd *cobra.Command, args []string) {
+		cmd.Help()
+	},
+}
+
+var autoremoveCmd = &cobra.Command{
+	Use:   "autoremove",
+	Short: "タグから存在しないデータを自動削除する",
+	Long:  "タグから存在しないデータを自動削除する",
+	Run: func(cmd *cobra.Command, args []string) {
+		cmd.Help()
+	},
+}
+
 // ==================== func ====================
+func showTags(tagNames []string) {
+	for _, v := range tagNames {
+		if !rootTags.Child(v).HasChild("comment") {
+			fmt.Println(v)
+			continue
+		}
+		comment := rootTags.Child(v, "comment").String()
+		fmt.Println(v, ":", comment)
+	}
+}
+
+func addUsage(cmd *cobra.Command, s string) {
+	ut := cmd.UsageTemplate()
+	ut = strings.Replace(ut, "{{.UseLine}}", "{{.UseLine}}"+s, -1)
+	cmd.SetUsageTemplate(ut)
+}
+
 func nestTag(tags ...string) (*nestmap.Nestmap, error) {
 	tags = strings.Split(strings.Join(tags, "/"), "/")
 
-	root := config.Child("root", "tags")
-	cur := root
+	cur := rootTags
 	for _, v := range tags {
 		if v == "" {
 			continue
@@ -97,28 +194,23 @@ func nestTag(tags ...string) (*nestmap.Nestmap, error) {
 		if !cur.HasChild(v) {
 			return nil, errors.New("tag not exists")
 		}
-		cur = root.Child(v, "tags")
+		cur = rootTags.Child(v, "tags")
 	}
 	return cur.Parent(), nil
 }
-func recNestTag(nm *nestmap.Nestmap, cb func(string)) {
-	root := config.Child("root", "tags")
-	for _, v := range nm.Child("tags").Keys() {
-		cb(v)
-		recNestTag(root.Child(v), cb)
+func recNestTag(nm *nestmap.Nestmap, path string, cb func(*nestmap.Nestmap, string)) {
+	if !nm.HasChild("tags") {
+		return
 	}
-}
-
-func getInitedTag() *nestmap.Nestmap {
-	tagini := nestmap.New()
-	tagini.Child("tags").MakeMap()
-	tagini.Child("files").MakeMap()
-	return tagini
+	for _, v := range nm.Child("tags").Keys() {
+		cb(rootTags.Child(v), path)
+		recNestTag(rootTags.Child(v), path+"/"+v, cb)
+	}
 }
 
 func initFile() {
 	os.Create(configFile)
-	config.Child("root", "tags").MakeMap()
+	rootTags.MakeMap()
 	save()
 }
 
@@ -133,14 +225,20 @@ func save() error {
 func init() {
 	config = nestmap.New()
 	config.Indent = "\t"
+	rootTags = config.Child("root", "tags")
 
 	cobra.OnInitialize()
-	RootCmd.AddCommand(versionCmd, tagCmd, fileCmd)
-	tagCmd.AddCommand(taglsCmd, createCmd, deleteCmd, addCmd, removeCmd, autoremoveCmd)
-	addCmd.AddCommand(addTagsCmd, addFilesCmd)
+	RootCmd.AddCommand(versionCmd, mountCmd)
+	RootCmd.AddCommand(showCmd, createCmd, deleteCmd, addCmd, removeCmd, autoremoveCmd)
+	showCmd.AddCommand(showTagsCmd, showFilesCmd, showAllCmd, showCommentCmd)
+	addCmd.AddCommand(addTagsCmd, addFilesCmd, addCommentCmd)
 	removeCmd.AddCommand(removeTagsCmd, removeFilesCmd)
 	autoremoveCmd.AddCommand(autoremoveAllCmd, autoremoveTagsCmd, autoremoveFilesCmd)
-	fileCmd.AddCommand(filelsCmd)
+
+	showFlagR = showCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にデータを表示する")
+	mountFlagR = mountCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にファイルをマウントする")
+
+	// fileCmd.AddCommand(filelsCmd)
 	// taglsCmd.Use = "tags"
 	// filelsCmd.Use = "files"
 	// RootCmd.AddCommand(taglsCmd, filelsCmd)

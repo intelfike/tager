@@ -23,6 +23,20 @@ var showTagsCmd = &cobra.Command{
 			return
 		}
 
+		// AND計算のため
+		tags := make([]string, 0)
+
+		for _, v := range args {
+			cur := rootTags.Child(v)
+			if !cur.Exists() {
+				fmt.Println("そのようなタグは存在しません")
+				continue
+			}
+			tags = append(tags, v)
+		}
+
+		// AND計算
+
 		cur := rootTags.Child(args[0])
 		if !cur.Exists() {
 			fmt.Println("そのようなタグは存在しません")

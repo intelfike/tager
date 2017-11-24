@@ -42,6 +42,7 @@ tager
 	copy [tag] [tag]
 	show
 		-c コメントの表示
+		ANDの計算
 ---
 */
 package main
@@ -180,6 +181,23 @@ var autoremoveCmd = &cobra.Command{
 }
 
 // ==================== func ====================
+func andStrings(a, b []string) []string {
+	c := make([]string, 0)
+	for _, v := range a {
+		index := -1
+		for n2, v2 := range b {
+			if v == v2 {
+				index = n2
+			}
+		}
+		if index == -1 {
+			continue
+		}
+		c = append(c, b[index])
+	}
+	return c
+}
+
 func showTags(tagNames []string) {
 	for _, v := range tagNames {
 		if !rootTags.Child(v).HasChild("comment") {

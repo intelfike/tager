@@ -30,8 +30,8 @@ var showTagsCmd = &cobra.Command{
 		}
 		if cur.Child("tags").IsMap() {
 			if *showFlagR {
-				recNestTag(cur, "", func(nm *nestmap.Nestmap, path string) {
-					fmt.Println(args[0] + path + "/" + nm.BottomPath().(string))
+				recNestTag(cur, args[0], func(nm *nestmap.Nestmap, path string) {
+					fmt.Println(path + "/" + nm.BottomPath().(string))
 				})
 			} else {
 				showTags(cur.Child("tags").Keys())

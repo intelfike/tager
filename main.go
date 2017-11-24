@@ -97,9 +97,19 @@ var mountCmd = &cobra.Command{
 			cmd.Help()
 			return
 		}
-		dir := args[0]
-		os.Mkdir(dir, 0777)
-		cur := rootTags.Child(dir)
+		dir := "tager-" + args[0]
+
+		cur := rootTags.Child(args[0])
+		if !cur.Exists() {
+			fmt.Println(args[0], "そのようなタグは存在しません")
+			return
+		}
+
+		if err := os.Mkdir(dir, 0777); err != nil {
+			fmt.Println("tag:", args[0])
+			fmt.Println(err)
+			return
+		}
 		if cur.HasChild("files") {
 			for _, v := range cur.Child("files").Keys() {
 				newname := strings.Replace(v, "/", "-", -1)
@@ -110,16 +120,20 @@ var mountCmd = &cobra.Command{
 			}
 		}
 		if *mountFlagR {
-			recNestTag(cur, "", func(nm *nestmap.Nestmap, path string) {
-				path = strings.TrimPrefix(path, "/")
-				os.Mkdir(path, 0777)
-				fmt.Println(nm, path)
+			recNestTag(cur, dir, func(nm *nestmap.Nestmap, path string) {
+				path = path + "/" + nm.BottomPath().(string)
+				if err := os.Mkdir(path, 0777); err != nil {
+					fmt.Println("tag:", path)
+					fmt.Println(err)
+					return
+				}
 				if !nm.HasChild("files") {
 					return
 				}
 				for _, v := range nm.Child("files").Keys() {
 					newname := strings.Replace(v, "/", "-", -1)
-					if err := os.Symlink(v, args[0]+path+"/"+newname); err != nil {
+					if err := os.Symlink(v, path+"/"+newname); err != nil {
+						fmt.Println("tag:", v)
 						fmt.Println(err)
 						continue
 					}

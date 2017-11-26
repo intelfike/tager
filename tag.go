@@ -13,7 +13,6 @@ var showTagsCmd = &cobra.Command{
 	Short: "タグを一覧する",
 	Long:  "タグを一覧する",
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.ParseFlags(args)
 		if len(args) == 0 {
 			if *showFlagR {
 				fmt.Println("-r --recursive を指定した場合には表示するタグ名も入力してください")
@@ -54,76 +53,15 @@ var showTagsCmd = &cobra.Command{
 	},
 }
 
-var createCmd = &cobra.Command{
-	Use:   "create",
-	Short: "新しいタグを作成する",
-	Long:  "新しいタグを作成する",
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			addUsage(cmd, " TAG")
-			cmd.Help()
-			return
-		}
-		root := rootTags
-		for _, v := range args {
-			if root.HasChild(v) {
-				fmt.Println(v, "というタグは既に存在しています")
-				continue
-			}
-			// タグの初期化
-			root.Child(v).MakeMap()
-		}
-		if err := save(); err != nil {
-			fmt.Println(err)
-			return
-		}
-	},
-}
-
-var deleteCmd = &cobra.Command{
-	Use:   "delete",
-	Short: "タグを完全に削除する",
-	Long:  "タグを完全に削除する",
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			addUsage(cmd, " TAG")
-			cmd.Help()
-			return
-		}
-		root := rootTags
-		for _, v := range args {
-			if !root.HasChild(v) {
-				fmt.Println(v, "というタグは存在しません")
-				continue
-			}
-			// タグの初期化
-			root.Child(v).Remove()
-		}
-		if err := save(); err != nil {
-			fmt.Println(err)
-			return
-		}
-	},
-}
-
 // ==================== add ====================
 
 // 循環参照のチェックをだね
 var addTagsCmd = &cobra.Command{
-	Use:   "tag",
+	Use:   "tag [flags] TAG TAGS...",
 	Short: "タグにタグを登録する",
 	Long:  "タグにタグを登録する\n登録先のタグ、登録するタグの両方が create されている必要があります",
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) <= 1 {
-			addUsage(cmd, " TAG TAGS...")
-			cmd.Help()
-			return
-		}
 		cur := rootTags.Child(args[0])
-		if !cur.Exists() {
-			fmt.Println(args[0], "そのようなタグは存在しません")
-			return
-		}
 		for _, v := range args[1:] {
 			if !rootTags.HasChild(v) {
 				fmt.Println(v, "そのようなタグは存在しません")
@@ -148,48 +86,38 @@ var addTagsCmd = &cobra.Command{
 				os.Exit(1)
 			}
 		})
-		if err := save(); err != nil {
-			fmt.Println(err)
-			return
-		}
 	},
 }
 
 // ==================== remove ====================
 
 var removeTagsCmd = &cobra.Command{
-	Use:   "tag",
+	Use:   "tag [flags] TAG TAGS...",
 	Short: "タグからタグを削除する",
 	Long:  "タグからタグを削除する\n削除するタグが存在していない場合は無視されます",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) <= 1 {
-			addUsage(cmd, " TAG TAGS...")
 			cmd.Help()
 			return
 		}
-		cur := rootTags.Child(args[0], "tags")
+		cur := rootTags.Child(args[0])
 		if !cur.Exists() {
 			fmt.Println(args[0], "そのようなタグは存在しません")
 			return
 		}
 		for _, v := range args[1:] {
-			if !rootTags.HasChild(v) {
+			if !rootTags.Child("tags").HasChild(v) {
 				fmt.Println(v, "そのようなタグは存在しません")
 				continue
 			}
-			cur.Child(v).Remove()
+			cur.Child("tags", v).Remove()
 		}
-		if err := save(); err != nil {
-			fmt.Println(err)
-			return
-		}
-
 	},
 }
 
 // ==================== autoremove ====================
 var autoremoveTagsCmd = &cobra.Command{
-	Use:   "tag",
+	Use:   "tag [TAG]",
 	Short: "タグから存在しないタグを自動削除する",
 	Long:  "タグから存在しないタグを自動削除する\nタグ名が未指定の場合はすべてのタグが対象です",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -198,23 +126,21 @@ var autoremoveTagsCmd = &cobra.Command{
 			args = rootTags.Keys()
 		}
 		for _, v := range args {
-			tags := rootTags.Child(v, "tags")
-			if !tags.Exists() {
+			cur := rootTags.Child(v)
+			if !cur.Exists() {
 				fmt.Println(v, "そのようなタグはありません")
 				continue
 			}
-			for _, tag := range tags.Keys() {
+			if !cur.HasChild("tags") {
+				continue
+			}
+			for _, tag := range cur.Child("tags").Keys() {
 				if rootTags.HasChild(tag) {
 					continue
 				}
-				tags.Child(tag).Remove()
+				cur.Child("tags", tag).Remove()
 				fmt.Println(v, "から", tag, "というタグを削除しました")
 			}
 		}
-		if err := save(); err != nil {
-			fmt.Println(err)
-			return
-		}
-
 	},
 }

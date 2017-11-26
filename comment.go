@@ -8,23 +8,23 @@ import (
 )
 
 var showCommentCmd = &cobra.Command{
-	Use:   "comment",
+	Use:   "comment [flags] TAG",
 	Short: "タグのコメントを表示する",
 	Long:  "タグにコメントを表示する\n登録先のタグが create されている必要があります",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
-			addUsage(cmd, " TAG COMMENT")
 			cmd.Help()
 			return
 		}
-		if !rootTags.Child(args[0]).Exists() {
+		cur := rootTags.Child(args[0])
+		if !cur.Exists() {
 			fmt.Println(args[0], "そのようなタグは存在しません")
 			return
 		}
-		if !rootTags.Child(args[0]).HasChild("comment") {
+		if !cur.HasChild("comment") {
 			return
 		}
-		comment := rootTags.Child(args[0], "comment").ToString()
+		comment := cur.Child("comment").ToString()
 		fmt.Println(comment)
 
 		if err := save(); err != nil {
@@ -35,12 +35,11 @@ var showCommentCmd = &cobra.Command{
 }
 
 var addCommentCmd = &cobra.Command{
-	Use:   "comment",
+	Use:   "comment [flags] TAG COMMENT",
 	Short: "タグにコメントを登録する",
 	Long:  "タグにコメントを登録する\n登録先のタグが create されている必要があります",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) <= 1 {
-			addUsage(cmd, " TAG COMMENT")
 			cmd.Help()
 			return
 		}

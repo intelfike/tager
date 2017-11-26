@@ -87,14 +87,95 @@ var versionCmd = &cobra.Command{
 	},
 }
 
+var infoCmd = &cobra.Command{
+	Use:   "info [TAG]",
+	Short: "現在のツール情報を表示する",
+	Long:  "現在のツール情報を表示する",
+	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) != 0 {
+			tagName := parseTagName(args[0])
+			cur := rootTags.Child(tagName)
+			if cur.HasChild("tags") {
+				for _, tag := range cur.Child("tags").Keys() {
+					if rootTags.HasChild(tag) {
+						continue
+					}
+					fmt.Println(tag, "というタグのリンクが切れています")
+				}
+			}
+			if cur.HasChild("files") {
+				for _, file := range cur.Child("files").Keys() {
+					if _, err := os.Stat(file); err == nil {
+						continue
+					}
+					fmt.Println(file, "というファイルのリンクが切れています")
+				}
+			}
+			return
+		}
+		// 「現在」の情報のため、カレントタグの情報表示
+		fmt.Println("current tag:", config.Child("root", "current"))
+		fmt.Println()
+		// autoremoveでのリンク切れ削除のチェック用
+		for _, v := range rootTags.Keys() {
+			cur := rootTags.Child(v)
+			if cur.HasChild("tags") {
+				tagCount := 0
+				for _, tag := range cur.Child("tags").Keys() {
+					if rootTags.HasChild(tag) {
+						continue
+					}
+					tagCount++
+				}
+				if tagCount != 0 {
+					fmt.Println(v, "タグに", tagCount, "個のタグのリンク切れが見つかりました")
+				}
+			}
+			if cur.HasChild("files") {
+				fileCount := 0
+				for _, file := range cur.Child("files").Keys() {
+					if _, err := os.Stat(file); err == nil {
+						continue
+					}
+					fileCount++
+				}
+				if fileCount != 0 {
+					fmt.Println(v, "タグに", fileCount, "個のファイルのリンク切れが見つかりました")
+				}
+			}
+		}
+		fmt.Println()
+		fmt.Println("tager info TAG で詳細を確認することができます")
+	},
+}
+
+var chCmd = &cobra.Command{
+	Use:   "ch TAG",
+	Short: "カレントタグを変更する",
+	Long:  "カレントタグを変更する",
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if len(args) != 1 {
+			cmd.Help()
+			os.Exit(0)
+		}
+		if err := execValis(cmd, args, tagExists); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		config.Child("root", "current").Set(args[0])
+	},
+	PersistentPostRun: savePost,
+}
+
 var mountCmd = &cobra.Command{
-	Use:   "mount",
+	Use:   "mount [flags] TAG",
 	Short: "シンボリックリンク集を作成する",
 	Long:  "シンボリックリンク集を作成する\nカレントディレクトリに、指定されたタグ名と同じディレクトリ名で作成されます",
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.ParseFlags(args)
 		if len(args) != 1 {
-			addUsage(cmd, " TAG")
 			cmd.Help()
 			return
 		}
@@ -144,123 +225,157 @@ var mountCmd = &cobra.Command{
 	},
 }
 
+var createCmd = &cobra.Command{
+	Use:   "create [flags] TAG",
+	Short: "新しいタグを作成する",
+	Long:  "新しいタグを作成する",
+	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			cmd.Help()
+			return
+		}
+		root := rootTags
+		for _, v := range args {
+			if root.HasChild(v) {
+				fmt.Println(v, "というタグは既に存在しています")
+				continue
+			}
+			if strings.ContainsAny(v, "/") {
+				fmt.Println("/", "タグ名にこれらの文字は利用できません")
+			}
+			if v == "." {
+				fmt.Println(".", "タグ名は名前は予約されています")
+			}
+			// タグの初期化
+			root.Child(v).MakeMap()
+		}
+		if err := save(); err != nil {
+			fmt.Println(err)
+			return
+		}
+	},
+}
+
+var deleteCmd = &cobra.Command{
+	Use:   "delete [flags] TAG",
+	Short: "タグを完全に削除する",
+	Long:  "タグを完全に削除する",
+	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			cmd.Help()
+			return
+		}
+		root := rootTags
+		for _, v := range args {
+			if !root.HasChild(v) {
+				fmt.Println(v, "というタグは存在しません")
+				continue
+			}
+			// タグの初期化
+			root.Child(v).Remove()
+		}
+		if err := save(); err != nil {
+			fmt.Println(err)
+			return
+		}
+	},
+}
+
 var showCmd = &cobra.Command{
 	Use:   "show",
 	Short: "データを一覧する",
 	Long:  "データを一覧する",
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		cmd.ParseFlags(args)
+		cmd.SetArgs(args)
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
 }
 
 var addCmd = &cobra.Command{
-	Use:   "add",
+	Use:   "add COMMAND TAG DATA...",
 	Short: "タグにデータを登録する",
 	Long:  "タグにデータを登録する",
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if len(args) <= 1 {
+			cmd.Help()
+			os.Exit(0)
+		}
+		args[0] = parseTagName(args[0])
+		if err := execValis(cmd, args, tagExists); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		cmd.SetArgs(args)
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
+	PersistentPostRun: savePost,
 }
 
 var removeCmd = &cobra.Command{
-	Use:   "remove",
+	Use:   "remove COMMAND TAG DATA...",
 	Short: "タグからデータの登録を解除する",
 	Long:  "タグからデータの登録を解除する\n削除するデータが存在していない場合は無視されます",
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if len(args) <= 1 {
+			cmd.Help()
+			os.Exit(0)
+		}
+		args[0] = parseTagName(args[0])
+		if err := execValis(cmd, args, tagExists); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		cmd.SetArgs(args)
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
+	PersistentPostRun: savePost,
 }
 
 var autoremoveCmd = &cobra.Command{
-	Use:   "autoremove",
+	Use:   "autoremove COMMAND [TAG...]",
 	Short: "タグから存在しないデータを自動削除する",
 	Long:  "タグから存在しないデータを自動削除する",
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
+	PersistentPostRun: savePost,
+}
+
+// ==================== validate func ====================
+
+// execute validations
+func execValis(cmd *cobra.Command, args []string, funcs ...func(cmd *cobra.Command, args []string) error) error {
+	for _, f := range funcs {
+		if err := f(cmd, args); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func tagExists(cmd *cobra.Command, args []string) error {
+	cur := rootTags.Child(args[0])
+	if !cur.Exists() {
+		return errors.New(args[0] + " そのようなタグは存在しません")
+	}
+	return nil
 }
 
 // ==================== func ====================
-func andStrings(a, b []string) []string {
-	c := make([]string, 0)
-	for _, v := range a {
-		index := -1
-		for n2, v2 := range b {
-			if v == v2 {
-				index = n2
-			}
-		}
-		if index == -1 {
-			continue
-		}
-		c = append(c, b[index])
-	}
-	return c
-}
-
-func showTags(tagNames []string) {
-	for _, v := range tagNames {
-		if !rootTags.Child(v).HasChild("comment") {
-			fmt.Println(v)
-			continue
-		}
-		comment := rootTags.Child(v, "comment").String()
-		fmt.Println(v, ":", comment)
-	}
-}
-
-func addUsage(cmd *cobra.Command, s string) {
-	ut := cmd.UsageTemplate()
-	ut = strings.Replace(ut, "{{.UseLine}}", "{{.UseLine}}"+s, -1)
-	cmd.SetUsageTemplate(ut)
-}
-
-func nestTag(tags ...string) (*nestmap.Nestmap, error) {
-	tags = strings.Split(strings.Join(tags, "/"), "/")
-
-	cur := rootTags
-	for _, v := range tags {
-		if v == "" {
-			continue
-		}
-		if !cur.HasChild(v) {
-			return nil, errors.New("tag not exists")
-		}
-		cur = rootTags.Child(v, "tags")
-	}
-	return cur.Parent(), nil
-}
-func recNestTag(nm *nestmap.Nestmap, path string, cb func(*nestmap.Nestmap, string)) {
-	if !nm.HasChild("tags") {
-		return
-	}
-	for _, v := range nm.Child("tags").Keys() {
-		cb(rootTags.Child(v), path)
-		recNestTag(rootTags.Child(v), path+"/"+v, cb)
-	}
-}
-
-func initFile() {
-	os.Create(configFile)
-	rootTags.MakeMap()
-	save()
-}
-
-func save() error {
-	b, err := config.BytesIndent()
-	if err != nil {
-		return err
-	}
-	return ioutil.WriteFile(configFile, b, 0766)
-}
-
 func init() {
 	config = nestmap.New()
 	config.Indent = "\t"
 	rootTags = config.Child("root", "tags")
 
 	cobra.OnInitialize()
-	RootCmd.AddCommand(versionCmd, mountCmd)
+	RootCmd.AddCommand(versionCmd, infoCmd, mountCmd, chCmd)
 	RootCmd.AddCommand(showCmd, createCmd, deleteCmd, addCmd, removeCmd, autoremoveCmd)
 	showCmd.AddCommand(showTagsCmd, showFilesCmd, showAllCmd, showCommentCmd)
 	addCmd.AddCommand(addTagsCmd, addFilesCmd, addCommentCmd)
@@ -305,4 +420,88 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+}
+
+func parseTagName(s string) string {
+	if s == "." {
+		current := config.Child("root", "current")
+		if !current.Exists() {
+			fmt.Println(". を利用しましたが、カレントタグが未登録です\ntager ch -h を参照してください")
+			os.Exit(1)
+		}
+		s = current.ToString()
+	}
+	return s
+}
+func andStrings(a, b []string) []string {
+	c := make([]string, 0)
+	for _, v := range a {
+		index := -1
+		for n2, v2 := range b {
+			if v == v2 {
+				index = n2
+			}
+		}
+		if index == -1 {
+			continue
+		}
+		c = append(c, b[index])
+	}
+	return c
+}
+
+func showTags(tagNames []string) {
+	for _, v := range tagNames {
+		if !rootTags.Child(v).HasChild("comment") {
+			fmt.Println(v)
+			continue
+		}
+		comment := rootTags.Child(v, "comment").String()
+		fmt.Println(v, ":", comment)
+	}
+}
+
+func nestTag(tags ...string) (*nestmap.Nestmap, error) {
+	tags = strings.Split(strings.Join(tags, "/"), "/")
+
+	cur := rootTags
+	for _, v := range tags {
+		if v == "" {
+			continue
+		}
+		if !cur.HasChild(v) {
+			return nil, errors.New("tag not exists")
+		}
+		cur = rootTags.Child(v, "tags")
+	}
+	return cur.Parent(), nil
+}
+func recNestTag(nm *nestmap.Nestmap, path string, cb func(*nestmap.Nestmap, string)) {
+	if !nm.HasChild("tags") {
+		return
+	}
+	for _, v := range nm.Child("tags").Keys() {
+		cb(rootTags.Child(v), path)
+		recNestTag(rootTags.Child(v), path+"/"+v, cb)
+	}
+}
+
+func initFile() {
+	os.Create(configFile)
+	rootTags.MakeMap()
+	save()
+}
+
+func savePost(cmd *cobra.Command, args []string) {
+	if err := save(); err != nil {
+		fmt.Println(err)
+		return
+	}
+}
+func save() error {
+	b, err := config.BytesIndent()
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(configFile, b, 0766)
 }

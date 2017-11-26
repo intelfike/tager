@@ -20,13 +20,11 @@ var fileCmd = &cobra.Command{
 }
 
 var showFilesCmd = &cobra.Command{
-	Use:   "file",
+	Use:   "file [flags] TAG",
 	Short: "ファイルを一覧する",
 	Long:  "ファイルを一覧する",
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.ParseFlags(args)
 		if len(args) == 0 {
-			addUsage(cmd, " TAG")
 			cmd.Help()
 			return
 		}
@@ -79,15 +77,10 @@ var fileAddCmd = &cobra.Command{
 }
 
 var addFilesCmd = &cobra.Command{
-	Use:   "file",
+	Use:   "file [flags] TAG FILES...",
 	Short: "タグにファイルを登録する",
 	Long:  "タグにファイルを登録する\n登録先のタグが create されている必要があります",
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) <= 1 {
-			addUsage(cmd, " TAG FILES...")
-			cmd.Help()
-			return
-		}
 		cur := rootTags.Child(args[0])
 		if !cur.Exists() {
 			fmt.Println(args[0], "そのようなタグは存在しません")
@@ -110,26 +103,20 @@ var addFilesCmd = &cobra.Command{
 			}
 			cur.Child("files", full).Set(v)
 		}
-		if err := save(); err != nil {
-			fmt.Println(err)
-			return
-		}
-
 	},
 }
 
 // 削除済みのファイルを削除できない！
 var removeFilesCmd = &cobra.Command{
-	Use:   "file",
+	Use:   "file [flags] TAG FILES...",
 	Short: "タグからファイルの登録を削除する",
 	Long:  "タグからファイルの登録を削除する\n削除するファイル名が存在していない場合は無視されます",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) <= 1 {
-			addUsage(cmd, " TAG FILES...")
 			cmd.Help()
 			return
 		}
-		cur := rootTags.Child(args[0], "files")
+		cur := rootTags.Child(args[0])
 		if !cur.Exists() {
 			fmt.Println(args[0], "そのようなタグは存在しません")
 			return
@@ -145,18 +132,13 @@ var removeFilesCmd = &cobra.Command{
 				fmt.Println(v, "ファイル名の指定が正しくありません")
 				continue
 			}
-			cur.Child(full).Remove()
+			cur.Child("files", full).Remove()
 		}
-		if err := save(); err != nil {
-			fmt.Println(err)
-			return
-		}
-
 	},
 }
 
 var autoremoveFilesCmd = &cobra.Command{
-	Use:   "file",
+	Use:   "file [TAG]",
 	Short: "タグから存在しないファイルを自動削除する",
 	Long:  "タグから存在しないファイルを自動削除する\nタグ名が未指定の場合はすべてのタグが対象です",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -165,23 +147,21 @@ var autoremoveFilesCmd = &cobra.Command{
 			args = rootTags.Keys()
 		}
 		for _, v := range args {
-			files := rootTags.Child(v, "files")
-			if !files.Exists() {
+			cur := rootTags.Child(v)
+			if !cur.Exists() {
 				fmt.Println(v, "そのようなタグはありません")
 				continue
 			}
-
-			for _, file := range files.Keys() {
+			if !cur.HasChild("files") {
+				continue
+			}
+			for _, file := range cur.Child("files").Keys() {
 				if _, err := os.Stat(file); err == nil {
 					continue
 				}
-				files.Child(file).Remove()
+				cur.Child("files", file).Remove()
 				fmt.Println(v, "から", file, "というファイルを削除しました")
 			}
-		}
-		if err := save(); err != nil {
-			fmt.Println(err)
-			return
 		}
 	},
 }

@@ -117,7 +117,7 @@ var removeTagsCmd = &cobra.Command{
 
 // ==================== autoremove ====================
 var autoremoveTagsCmd = &cobra.Command{
-	Use:   "tag [TAG]",
+	Use:   "tag [TAG....]",
 	Short: "タグから存在しないタグを自動削除する",
 	Long:  "タグから存在しないタグを自動削除する\nタグ名が未指定の場合はすべてのタグが対象です",
 	Run: func(cmd *cobra.Command, args []string) {

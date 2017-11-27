@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -20,9 +19,9 @@ var fileCmd = &cobra.Command{
 }
 
 var showFilesCmd = &cobra.Command{
-	Use:   "file [flags] TAG",
+	Use:   "file [flags] TAG...",
 	Short: "ファイルを一覧する",
-	Long:  "ファイルを一覧する",
+	Long:  "ファイルを一覧する\n複数のタグを指定した場合はAND計算をします",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
 			cmd.Help()
@@ -67,15 +66,6 @@ var showFilesCmd = &cobra.Command{
 
 // ==================== add ====================
 
-var fileAddCmd = &cobra.Command{
-	Use:   "add",
-	Short: "ファイルにタグを付与する",
-	Long:  "ファイルにタグを付与する\nタグが存在しない場合は登録できません",
-	Run: func(cmd *cobra.Command, args []string) {
-
-	},
-}
-
 var addFilesCmd = &cobra.Command{
 	Use:   "file [flags] TAG FILES...",
 	Short: "タグにファイルを登録する",
@@ -87,22 +77,20 @@ var addFilesCmd = &cobra.Command{
 			return
 		}
 		for _, v := range args[1:] {
-			_, err := os.Stat(v)
-			if err != nil {
-				fmt.Println(v, "そのようなファイルは存在しません")
-				continue
-			}
-			full, err := filepath.Abs(v)
-			if err != nil {
-				fmt.Println(v, "ファイル名の指定が正しくありません")
-				continue
-			}
-			if cur.Child("files").HasChild(full) {
-				fmt.Println(v, "というファイルは既に", args[0], "に登録されています")
-				continue
-			}
-			cur.Child("files", full).Set(v)
+			tager.tagAddFile(args[0], v)
 		}
+		fmt.Println(tager.getTag(args[0]))
+		tager.saveConfig()
+		// filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		// 	if info.IsDir() {
+		// 		return nil
+		// 	}
+		// 	if cur.Child("files").HasChild(full) {
+		// 		fmt.Println(file, "というファイルは既に", args[0], "に登録されています")
+		// 		continue
+		// 	}
+		// 	cur.Child("files", full).Set(file)
+		// })
 	},
 }
 
@@ -122,8 +110,7 @@ var removeFilesCmd = &cobra.Command{
 			return
 		}
 		for _, v := range args[1:] {
-			_, err := os.Stat(v)
-			if err != nil {
+			if !fileExists(v) {
 				fmt.Println(v, "そのようなファイルは存在しません")
 				continue
 			}
@@ -138,7 +125,7 @@ var removeFilesCmd = &cobra.Command{
 }
 
 var autoremoveFilesCmd = &cobra.Command{
-	Use:   "file [TAG]",
+	Use:   "file [TAG]...",
 	Short: "タグから存在しないファイルを自動削除する",
 	Long:  "タグから存在しないファイルを自動削除する\nタグ名が未指定の場合はすべてのタグが対象です",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -156,7 +143,7 @@ var autoremoveFilesCmd = &cobra.Command{
 				continue
 			}
 			for _, file := range cur.Child("files").Keys() {
-				if _, err := os.Stat(file); err == nil {
+				if !fileExists(file) {
 					continue
 				}
 				cur.Child("files", file).Remove()

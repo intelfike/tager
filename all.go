@@ -26,7 +26,7 @@ var showAllCmd = &cobra.Command{
 }
 
 var autoremoveAllCmd = &cobra.Command{
-	Use:   "all [TAG]",
+	Use:   "all [TAG...]",
 	Short: "タグから存在しないタグとファイルを自動削除する",
 	Long:  "タグから存在しないタグとファイルを自動削除する\nタグ名が未指定の場合はすべてのタグが対象です",
 	Run: func(cmd *cobra.Command, args []string) {

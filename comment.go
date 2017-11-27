@@ -26,11 +26,6 @@ var showCommentCmd = &cobra.Command{
 		}
 		comment := cur.Child("comment").ToString()
 		fmt.Println(comment)
-
-		if err := save(); err != nil {
-			fmt.Println(err)
-			return
-		}
 	},
 }
 

@@ -3,6 +3,7 @@
 ## 気をつけること
 - ドキュメントを内包しているかのような使いやすさ(サブコマンドの利用)
 - タイプミスなどを防ぐフールプルーフ設計(タグを定義すること)
+	findコマンド連携などをさせない
 - 環境設定などが必要ない設計(シングルバイナリでの提供、設定ファイルはHOMEディレクトリに設置など)
 
 ## 対象
@@ -62,11 +63,14 @@ import (
 
 // ==================== 定義 ====================
 var (
-	config     *nestmap.Nestmap
-	configFile string
-	rootTags   *nestmap.Nestmap
-	showFlagR  *bool
-	mountFlagR *bool
+	config          *nestmap.Nestmap
+	configFile      string
+	rootTags        *nestmap.Nestmap
+	showFlagR       *bool
+	mountFlagR      *bool
+	addFileFlagR    *bool
+	removeFileFlagR *bool
+	tager           = new(Tager)
 )
 
 var RootCmd = &cobra.Command{
@@ -93,6 +97,7 @@ var infoCmd = &cobra.Command{
 	Long:  "現在のツール情報を表示する",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) != 0 {
+			// リンク切れの詳細表示
 			tagName := parseTagName(args[0])
 			cur := rootTags.Child(tagName)
 			if cur.HasChild("tags") {
@@ -105,12 +110,14 @@ var infoCmd = &cobra.Command{
 			}
 			if cur.HasChild("files") {
 				for _, file := range cur.Child("files").Keys() {
-					if _, err := os.Stat(file); err == nil {
+					if !fileExists(file) {
 						continue
 					}
 					fmt.Println(file, "というファイルのリンクが切れています")
 				}
 			}
+			fmt.Println()
+			fmt.Println("tager autoremove [TAGS...]")
 			return
 		}
 		// 「現在」の情報のため、カレントタグの情報表示
@@ -134,7 +141,7 @@ var infoCmd = &cobra.Command{
 			if cur.HasChild("files") {
 				fileCount := 0
 				for _, file := range cur.Child("files").Keys() {
-					if _, err := os.Stat(file); err == nil {
+					if fileExists(file) {
 						continue
 					}
 					fileCount++
@@ -384,6 +391,8 @@ func init() {
 
 	showFlagR = showCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にデータを表示する")
 	mountFlagR = mountCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にファイルをマウントする")
+	addFileFlagR = addFilesCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にファイルを追加する")
+	removeFileFlagR = removeFilesCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にファイルを除外する")
 
 	// fileCmd.AddCommand(filelsCmd)
 	// taglsCmd.Use = "tags"
@@ -415,11 +424,21 @@ func main() {
 
 	config.Set(*m)
 
+	tager.readConfig(configFile)
+
 	// コマンド実行
 	if err := RootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+}
+
+func fileExists(filename string) bool {
+	f, err := os.Stat(filename)
+	if err != nil {
+		return false
+	}
+	return !f.IsDir()
 }
 
 func parseTagName(s string) string {
@@ -499,6 +518,7 @@ func savePost(cmd *cobra.Command, args []string) {
 	}
 }
 func save() error {
+	tager.saveConfig()
 	b, err := config.BytesIndent()
 	if err != nil {
 		return err

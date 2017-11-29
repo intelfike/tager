@@ -68,7 +68,7 @@ func (t *Tager) saveConfig() error {
 
 // ========== get ==========
 func (t *Tager) tagExists(tag string) bool {
-	_, err := getTag(tag)
+	_, err := t.getTag(tag)
 	return err == nil
 }
 func (t *Tager) getTag(tag string) (*nestmap.Nestmap, error) {

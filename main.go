@@ -294,10 +294,6 @@ var showCmd = &cobra.Command{
 	Use:   "show",
 	Short: "データを一覧する",
 	Long:  "データを一覧する",
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		cmd.ParseFlags(args)
-		cmd.SetArgs(args)
-	},
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},

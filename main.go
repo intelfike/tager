@@ -77,8 +77,32 @@ var RootCmd = &cobra.Command{
 	Use:   "tager",
 	Short: "Semantic File System",
 	Long:  "[Semantic File System]",
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if !tager.isInited() {
+			fmt.Println("初期設定がされていません\ntager init を実行してください")
+			os.Exit(1)
+		}
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
+	},
+}
+
+var initCmd = &cobra.Command{
+	Use:   "init",
+	Short: "初期設定",
+	Long: `初期設定
+最初に実行してください
+
+~/.tager/config.json が生成されます
+apt install sshfs が実行されます
+`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if !tager.isInited() {
+			tager.init()
+		} else {
+			fmt.Println("初期設定済みです")
+		}
 	},
 }
 
@@ -98,24 +122,19 @@ var infoCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) != 0 {
 			// リンク切れの詳細表示
-			tagName := parseTagName(args[0])
-			cur := rootTags.Child(tagName)
-			if cur.HasChild("tags") {
-				for _, tag := range cur.Child("tags").Keys() {
-					if rootTags.HasChild(tag) {
-						continue
-					}
-					fmt.Println(tag, "というタグのリンクが切れています")
-				}
+			tags, err := tager.autoremovableTags(args[0])
+			if err != nil {
+				fmt.Println(err)
+				return
 			}
-			if cur.HasChild("files") {
-				for _, file := range cur.Child("files").Keys() {
-					if !fileExists(file) {
-						continue
-					}
-					fmt.Println(file, "というファイルのリンクが切れています")
-				}
+			for _, tag := range tags {
+				fmt.Println(tag, "というタグのリンクが切れています")
 			}
+			files, _ := tager.autoremovableFiles(args[0])
+			for _, file := range files {
+				fmt.Println(file, "というファイルのリンクが切れています")
+			}
+
 			fmt.Println()
 			fmt.Println("tager autoremove [TAGS...]")
 			return
@@ -124,31 +143,14 @@ var infoCmd = &cobra.Command{
 		fmt.Println("current tag:", config.Child("root", "current"))
 		fmt.Println()
 		// autoremoveでのリンク切れ削除のチェック用
-		for _, v := range rootTags.Keys() {
-			cur := rootTags.Child(v)
-			if cur.HasChild("tags") {
-				tagCount := 0
-				for _, tag := range cur.Child("tags").Keys() {
-					if rootTags.HasChild(tag) {
-						continue
-					}
-					tagCount++
-				}
-				if tagCount != 0 {
-					fmt.Println(v, "タグに", tagCount, "個のタグのリンク切れが見つかりました")
-				}
+		for _, v := range tager.rootTags.Keys() {
+			tags, err := tager.autoremovableTags(v)
+			if len(tags) != 0 && err == nil {
+				fmt.Println(v, "タグに", len(tags), "個のタグのリンク切れが見つかりました")
 			}
-			if cur.HasChild("files") {
-				fileCount := 0
-				for _, file := range cur.Child("files").Keys() {
-					if fileExists(file) {
-						continue
-					}
-					fileCount++
-				}
-				if fileCount != 0 {
-					fmt.Println(v, "タグに", fileCount, "個のファイルのリンク切れが見つかりました")
-				}
+			files, _ := tager.autoremovableFiles(v)
+			if len(files) != 0 {
+				fmt.Println(v, "タグに", len(files), "個のファイルのリンク切れが見つかりました")
 			}
 		}
 		fmt.Println()
@@ -310,7 +312,6 @@ var addCmd = &cobra.Command{
 			cmd.Help()
 			os.Exit(0)
 		}
-		args[0] = parseTagName(args[0])
 		if err := execValis(cmd, args, tagExists); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
@@ -332,7 +333,6 @@ var removeCmd = &cobra.Command{
 			cmd.Help()
 			os.Exit(0)
 		}
-		args[0] = parseTagName(args[0])
 		if err := execValis(cmd, args, tagExists); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
@@ -380,19 +380,22 @@ func init() {
 	config = nestmap.New()
 	config.Indent = "\t"
 	rootTags = config.Child("root", "tags")
+	// 設定ファイルの読み込み
+	dir := os.Getenv("HOME") + "/.tager"
+	configFile = dir + "/config.json"
 
 	cobra.OnInitialize()
-	RootCmd.AddCommand(versionCmd, infoCmd, mountCmd, chCmd)
+	RootCmd.AddCommand(initCmd, versionCmd, infoCmd, mountCmd, chCmd)
 	RootCmd.AddCommand(showCmd, createCmd, deleteCmd, addCmd, removeCmd, autoremoveCmd)
 	showCmd.AddCommand(showTagsCmd, showFilesCmd, showAllCmd, showCommentCmd)
 	addCmd.AddCommand(addTagsCmd, addFilesCmd, addCommentCmd)
 	removeCmd.AddCommand(removeTagsCmd, removeFilesCmd)
 	autoremoveCmd.AddCommand(autoremoveAllCmd, autoremoveTagsCmd, autoremoveFilesCmd)
 
-	showFlagR = showCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にデータを表示する")
+	showFlagR = showCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にタグを辿ってデータを表示する")
 	mountFlagR = mountCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にファイルをマウントする")
-	addFileFlagR = addFilesCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にファイルを追加する")
-	removeFileFlagR = removeFilesCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にファイルを除外する")
+	addFileFlagR = addFilesCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にファイルを探索してタグに登録する")
+	removeFileFlagR = removeFilesCmd.PersistentFlags().BoolP("recursive", "r", false, "再帰的にファイルを探索してタグから登録を解除する")
 
 	// fileCmd.AddCommand(filelsCmd)
 	// taglsCmd.Use = "tags"
@@ -401,19 +404,7 @@ func init() {
 }
 
 func main() {
-	// 設定ファイルの読み込み
-	dir := os.Getenv("HOME") + "/.tager"
-	configFile = dir + "/tag.json"
-	if _, err := os.Stat(dir); err != nil {
-		os.Mkdir(dir, 0777)
-		initFile()
-	}
-
 	confb, err := ioutil.ReadFile(configFile)
-	if err != nil {
-		initFile()
-		confb, _ = ioutil.ReadFile(configFile)
-	}
 
 	m := new(interface{})
 
@@ -468,6 +459,19 @@ func andStrings(a, b []string) []string {
 	}
 	return c
 }
+func uniqueStrings(ss ...string) []string {
+	result := make([]string, 0)
+	unique := map[string]bool{}
+	for _, v := range ss {
+		_, ok := unique[v]
+		if ok {
+			continue
+		}
+		unique[v] = true
+		result = append(result, v)
+	}
+	return result
+}
 
 func showTags(tagNames []string) {
 	for _, v := range tagNames {
@@ -512,13 +516,12 @@ func initFile() {
 }
 
 func savePost(cmd *cobra.Command, args []string) {
-	if err := save(); err != nil {
+	if err := tager.saveConfig(); err != nil {
 		fmt.Println(err)
 		return
 	}
 }
 func save() error {
-	tager.saveConfig()
 	b, err := config.BytesIndent()
 	if err != nil {
 		return err

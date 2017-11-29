@@ -21,35 +21,12 @@ var showTagsCmd = &cobra.Command{
 			showTags(rootTags.Keys())
 			return
 		}
-
-		// AND計算のため
-		tags := make([]string, 0)
-
-		for _, v := range args {
-			cur := rootTags.Child(v)
-			if !cur.Exists() {
-				fmt.Println("そのようなタグは存在しません")
-				continue
-			}
-			tags = append(tags, v)
-		}
-
-		// AND計算
-
-		cur := rootTags.Child(args[0])
-		if !cur.Exists() {
-			fmt.Println("そのようなタグは存在しません")
+		ss, err := tager.getChildTags(args[0])
+		if err != nil {
+			fmt.Println(err)
 			return
 		}
-		if cur.Child("tags").IsMap() {
-			if *showFlagR {
-				recNestTag(cur, args[0], func(nm *nestmap.Nestmap, path string) {
-					fmt.Println(path + "/" + nm.BottomPath().(string))
-				})
-			} else {
-				showTags(cur.Child("tags").Keys())
-			}
-		}
+		showTags(ss)
 	},
 }
 
@@ -61,10 +38,14 @@ var addTagsCmd = &cobra.Command{
 	Short: "タグにタグを登録する",
 	Long:  "タグにタグを登録する\n登録先のタグ、登録するタグの両方が create されている必要があります",
 	Run: func(cmd *cobra.Command, args []string) {
-		cur := rootTags.Child(args[0])
+		cur, err := tager.getTag(args[0])
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 		for _, v := range args[1:] {
-			if !rootTags.HasChild(v) {
-				fmt.Println(v, "そのようなタグは存在しません")
+			if _, err := tager.getTag(v); err != nil {
+				fmt.Println(err)
 				continue
 			}
 			if args[0] == v {
@@ -100,14 +81,14 @@ var removeTagsCmd = &cobra.Command{
 			cmd.Help()
 			return
 		}
-		cur := rootTags.Child(args[0])
-		if !cur.Exists() {
-			fmt.Println(args[0], "そのようなタグは存在しません")
+		cur, err := tager.getTag(args[0])
+		if err != nil {
+			fmt.Println(err)
 			return
 		}
 		for _, v := range args[1:] {
-			if !rootTags.Child("tags").HasChild(v) {
-				fmt.Println(v, "そのようなタグは存在しません")
+			if _, err := tager.getTag(v); err != nil {
+				fmt.Println(err)
 				continue
 			}
 			cur.Child("tags", v).Remove()

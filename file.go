@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/intelfike/nestmap"
 	"github.com/spf13/cobra"
 )
 
@@ -27,40 +26,12 @@ var showFilesCmd = &cobra.Command{
 			cmd.Help()
 			return
 		}
-
-		files := make([][]string, 0)
-		for _, v := range args {
-			cur := rootTags.Child(v)
-			if !cur.Exists() {
-				fmt.Println(v, "そのようなタグは存在しません")
-				continue
-			}
-			files = append(files, make([]string, 0))
-			if cur.IsMap() {
-				if cur.HasChild("files") {
-					files[len(files)-1] = cur.Child("files").Keys()
-				}
-				if *showFlagR {
-					recNestTag(cur, "", func(nm *nestmap.Nestmap, path string) {
-						if !nm.HasChild("files") {
-							return
-						}
-						files[len(files)-1] = nm.Child("files").Keys()
-					})
-				}
-			}
-		}
-		if len(files) == 0 {
+		ss, err := tager.getFilesAND(args...)
+		if err != nil {
+			fmt.Println(err)
 			return
 		}
-		and := make([]string, len(files[0]))
-		copy(and, files[0])
-		if len(files) != 1 {
-			for _, v := range files[1:] {
-				and = andStrings(and, v)
-			}
-		}
-		fmt.Println(strings.Join(and, "\n"))
+		fmt.Println(strings.Join(ss, "\n"))
 	},
 }
 
@@ -76,21 +47,13 @@ var addFilesCmd = &cobra.Command{
 			fmt.Println(args[0], "そのようなタグは存在しません")
 			return
 		}
-		for _, v := range args[1:] {
-			tager.tagAddFile(args[0], v)
+		fmt.Println(args)
+		if *addFileFlagR {
+			tager.tagAddFileRec(args[0], args[1:]...)
+		} else {
+			tager.tagAddFile(args[0], args[1:]...)
 		}
-		fmt.Println(tager.getTag(args[0]))
 		tager.saveConfig()
-		// filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
-		// 	if info.IsDir() {
-		// 		return nil
-		// 	}
-		// 	if cur.Child("files").HasChild(full) {
-		// 		fmt.Println(file, "というファイルは既に", args[0], "に登録されています")
-		// 		continue
-		// 	}
-		// 	cur.Child("files", full).Set(file)
-		// })
 	},
 }
 
